@@ -232,6 +232,8 @@ class OplogThread(threading.Thread):
                                                entry['ts']),
                                            "ns": ns}
                                     # 'o' field contains the update spec
+                                    print 'oplog_manager......'
+                                    #o:更新的字段和值
                                     docman.update(doc, entry.get('o', {}))
                                     update_inc += 1
                             except errors.OperationFailed:

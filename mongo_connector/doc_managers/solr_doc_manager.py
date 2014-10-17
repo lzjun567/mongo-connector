@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # Copyright 2013-2014 MongoDB, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,6 +59,7 @@ class DocManager(DocManagerBase):
         """
         self.solr = Solr(url)
         self.unique_key = unique_key
+        print 'unique_key:', unique_key
         # pysolr does things in milliseconds
         if auto_commit_interval is not None:
             self.auto_commit_interval = auto_commit_interval * 1000
@@ -97,7 +100,9 @@ class DocManager(DocManagerBase):
                     re.compile("\A%s.*" % wc_pattern[:-1]))
 
     def _clean_doc(self, doc):
-        """Reformats the given document before insertion into Solr.
+        """
+        清洗文档，把mongodb中的_id转换成id
+        Reformats the given document before insertion into Solr.
 
         This method reformats the document in the following ways:
           - removes extraneous fields that aren't defined in schema.xml
@@ -123,7 +128,9 @@ class DocManager(DocManagerBase):
         # Translate the _id field to whatever unique key we're using.
         # _id may not exist in the doc, if we retrieved it from Solr
         # as part of update.
+        print 'doc:', doc
         if '_id' in doc:
+            print '_id in doc'
             doc[self.unique_key] = doc.pop("_id")
 
         # SOLR cannot index fields within sub-documents, so flatten documents
@@ -139,6 +146,7 @@ class DocManager(DocManagerBase):
                     regex.match(field) for regex in self._dynamic_field_regexes
                 )
             return dict((k, v) for k, v in flat_doc.items() if include_field(k))
+        print 'flat_doc:', flat_doc
         return flat_doc
 
     def stop(self):
@@ -149,13 +157,22 @@ class DocManager(DocManagerBase):
     def apply_update(self, doc, update_spec):
         """Override DocManagerBase.apply_update to have flat documents."""
         # Replace a whole document
+        #参数doc：solr中的document
+        #参数update_spec：mongodb中的document那些发生变更的字段和值
+        print 'apply_update:doc:', doc
+        print 'apply_update:update_spec:', update_spec
         if not '$set' in update_spec and not '$unset' in update_spec:
+            print 'not $set'
             # update spec contains the new document
             update_spec['_ts'] = doc['_ts']
             update_spec['ns'] = doc['ns']
-            update_spec['_id'] = doc['_id']
+            #这一行不知道是不是mongo-connector的bug，因为这个时候的doc是索引中的doc，索引的doc只有id，没有_id
+            # update_spec['_id'] = doc['_id']
+            update_spec['id'] = doc['id']
             return update_spec
         for to_set in update_spec.get("$set", []):
+            #更新
+            print 'update document.......'
             value = update_spec['$set'][to_set]
             # Find dotted-path to the value, remove that key from doc, then
             # put value at key:
@@ -181,6 +198,11 @@ class DocManager(DocManagerBase):
 
     @wrap_exceptions
     def update(self, doc, update_spec):
+        #更新搜索
+        print 'update.......'
+        print 'update:doc:',doc
+        print 'update:update_spec:', update_spec
+
         """Apply updates given in update_spec to the document whose id
         matches that of doc.
 
@@ -194,6 +216,7 @@ class DocManager(DocManagerBase):
             # Document may not be retrievable yet
             self.commit()
             results = self.solr.search(query)
+            #从索引中读出完整的结果
         # Results is an iterable containing only 1 result
         for doc in results:
             updated = self.apply_update(doc, update_spec)
@@ -204,7 +227,9 @@ class DocManager(DocManagerBase):
 
     @wrap_exceptions
     def upsert(self, doc):
-        """Update or insert a document into Solr
+        """
+        真正插入到solr索引中去的方法
+        Update or insert a document into Solr
 
         This method should call whatever add/insert/update method exists for
         the backend engine and add the document in there. The input will
